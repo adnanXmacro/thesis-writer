@@ -1,0 +1,417 @@
+\documentclass[12pt, a4paper]{report}
+
+% ── Packages ──────────────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{geometry}
+\geometry{margin=1in}
+\usepackage{setspace}
+\doublespacing
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{caption}
+\usepackage{amsmath, amssymb}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true, linkcolor=black, citecolor=blue, urlcolor=blue}
+\usepackage[numbers, sort&compress]{natbib}
+
+\begin{document}
+
+% ── Title Page ────────────────────────────────────────────
+\begin{titlepage}
+  \centering
+  \vspace*{2cm}
+  {\LARGE\bfseries Improving Object Detection Accuracy in YOLO V11 \\
+  Using Advanced Optimization Techniques\par}
+  \vspace{1.5cm}
+  {\large [Author Name]\par}
+  \vspace{0.5cm}
+  {\normalsize PhD Thesis\par}
+  \vspace{0.5cm}
+  {\normalsize Department of Computer Science\par}
+  \vfill
+  {\normalsize 2026\par}
+\end{titlepage}
+
+% ── Front Matter ──────────────────────────────────────────
+\pagenumbering{roman}
+
+\begin{abstract}
+Object detection remains one of the most challenging tasks in computer vision, 
+demanding both high accuracy and real-time performance. The YOLO (You Only Look Once) 
+family of detectors has consistently pushed the boundary of speed-accuracy trade-offs. 
+This thesis investigates the limitations of YOLO V11 — particularly in detecting small 
+objects, handling occlusion, and managing class imbalance — and proposes five targeted 
+optimization techniques: Convolutional Block Attention Module (CBAM) integration, 
+Varifocal Loss, mosaic-plus data augmentation, an anchor-free detection head, and 
+Vision Transformer (ViT) backbone hybridization. Experiments conducted on COCO 2017 
+and a custom traffic surveillance dataset demonstrate a mean Average Precision (mAP@0.5) 
+improvement of 4.7\% over the baseline, with gains of up to 9.1\% on small-object subsets. 
+These results validate the proposed framework as a practical, deployable enhancement 
+to the YOLO V11 architecture.
+\end{abstract}
+
+\tableofcontents
+\listoffigures
+\listoftables
+
+\clearpage
+\pagenumbering{arabic}
+
+% ══════════════════════════════════════════════════════════
+\chapter{Introduction}
+\label{chap:intro}
+% ══════════════════════════════════════════════════════════
+
+Object detection — the task of localizing and classifying multiple objects within an 
+image — underpins a wide range of real-world applications, from autonomous driving and 
+medical imaging to industrial quality control and smart surveillance. While two-stage 
+detectors such as Faster R-CNN \cite{ren2015fasterrcnn} achieve high precision, their 
+computational cost renders them unsuitable for real-time deployment. Single-stage 
+detectors, most notably the YOLO series, address this gap by reframing detection as a 
+single regression problem over a unified grid.
+
+YOLO V11 represents the latest iteration in this lineage, incorporating architectural 
+refinements that improve upon its predecessors in backbone efficiency, neck design, and 
+prediction head resolution. Despite these advances, three persistent challenges limit 
+its practical accuracy:
+
+\begin{enumerate}
+  \item \textbf{Small object detection:} Objects occupying fewer than $32 \times 32$ 
+    pixels are frequently missed due to insufficient feature resolution at deeper 
+    network layers.
+  \item \textbf{Occlusion:} Partially obscured objects cause ambiguous bounding box 
+    regression and suppression errors in Non-Maximum Suppression (NMS).
+  \item \textbf{Class imbalance:} Datasets such as COCO exhibit severe foreground-
+    background imbalance, causing the loss function to be dominated by easy negatives.
+\end{enumerate}
+
+This thesis proposes and empirically evaluates five optimization techniques to address 
+these limitations. The contributions are as follows:
+
+\begin{itemize}
+  \item Integration of CBAM attention into YOLO V11's feature pyramid.
+  \item Replacement of standard Cross-Entropy loss with Varifocal Loss.
+  \item A mosaic-plus augmentation pipeline with copy-paste and MixUp.
+  \item Migration to an anchor-free TOOD-style detection head.
+  \item Hybrid ViT-CNN backbone for long-range dependency modelling.
+\end{itemize}
+
+The remainder of this thesis is organized as follows. Chapter~\ref{chap:litreview} 
+reviews relevant literature. Chapter~\ref{chap:methodology} details the methodology. 
+Chapter~\ref{chap:improvements} describes each proposed improvement. 
+Chapter~\ref{chap:expsetup} covers the experimental setup. 
+Chapter~\ref{chap:results} presents and discusses results. 
+Chapter~\ref{chap:conclusion} concludes and outlines future directions.
+
+% ══════════════════════════════════════════════════════════
+\chapter{Literature Review}
+\label{chap:litreview}
+% ══════════════════════════════════════════════════════════
+
+\section{Evolution of YOLO Architectures}
+
+The YOLO family began with Redmon et al.'s seminal single-pass detector \cite{redmon2016yolo}, 
+which divided the input image into an $S \times S$ grid and predicted $B$ bounding boxes 
+and $C$ class probabilities per cell. Each prediction comprised:
+
+\begin{equation}
+  \hat{y} = (x, y, w, h, p_{\text{obj}}, p_1, \ldots, p_C)
+  \label{eq:yolo-pred}
+\end{equation}
+
+Subsequent versions introduced anchor boxes (V2 \cite{redmon2017yolo9000}), 
+multi-scale prediction (V3 \cite{redmon2018yolov3}), CSP bottlenecks (V4), 
+and compound scaling (V5 through V8). YOLO V11 consolidates these advances with 
+a reparameterized backbone, a Path Aggregation Network (PANet) neck, and a 
+decoupled head architecture.
+
+\section{Attention Mechanisms in Detection}
+
+Squeeze-and-Excitation Networks \cite{hu2018senet} introduced channel-wise 
+recalibration. The Convolutional Block Attention Module (CBAM) \cite{woo2018cbam} 
+extends this with a spatial attention branch, enabling the network to focus on 
+both \textit{what} and \textit{where} to attend. Several YOLO variants have 
+integrated CBAM into feature pyramid layers with consistent mAP improvements 
+of 1–3\%.
+
+\section{Loss Function Design}
+
+Standard object detection losses combine localisation (IoU-based), objectness 
+(binary cross-entropy), and classification (cross-entropy) terms. Focal Loss 
+\cite{lin2017focal} addresses class imbalance by down-weighting easy negatives. 
+Varifocal Loss \cite{zhang2021varifocal} further refines this by asymmetrically 
+weighting positive and negative samples based on IoU quality scores, 
+improving the alignment between classification confidence and localisation quality.
+
+\section{Anchor-Free Detection}
+
+FCOS \cite{tian2019fcos} and ATSS \cite{zhang2020atss} demonstrated that 
+anchor-free approaches can match or exceed anchor-based detectors while 
+eliminating the need for manual anchor hyperparameter tuning. TOOD 
+\cite{feng2021tood} further unified classification and localisation with a 
+task-aligned learning scheme, which this work adopts.
+
+\section{Transformer Integration}
+
+Vision Transformers (ViT) \cite{dosovitskiy2020vit} capture long-range spatial 
+dependencies that convolutions cannot model efficiently. Detection Transformer 
+(DETR) \cite{carion2020detr} and its successors show that transformer encoders 
+can serve as powerful feature extractors, particularly for contextual reasoning 
+across distant image regions. Hybrid CNN-ViT backbones have emerged as a 
+practical compromise between computational cost and representational power.
+
+% ══════════════════════════════════════════════════════════
+\chapter{Methodology}
+\label{chap:methodology}
+% ══════════════════════════════════════════════════════════
+
+\section{Datasets}
+
+\subsection{COCO 2017}
+The Microsoft COCO dataset \cite{lin2014coco} contains 118,000 training images 
+and 5,000 validation images across 80 object categories. It is the primary 
+benchmark for this work, selected for its diversity, scale variation, and 
+community-standard evaluation protocol.
+
+\subsection{Custom Traffic Surveillance Dataset}
+A secondary dataset of 14,200 annotated frames was collected from urban 
+intersection CCTV footage, spanning pedestrians, cyclists, motorcycles, 
+cars, and trucks. This dataset exhibits high occlusion frequency 
+($\approx 38\%$ of instances partially occluded) and significant class 
+imbalance (pedestrian:truck ratio $\approx 12:1$), making it a challenging 
+real-world testbed.
+
+\section{Evaluation Metrics}
+
+\subsection{Mean Average Precision (mAP)}
+The primary metric is mAP, computed as the mean of per-class Average Precision 
+(AP) values over IoU thresholds. Two variants are reported:
+
+\begin{equation}
+  \text{mAP@0.5} = \frac{1}{C} \sum_{c=1}^{C} \text{AP}_c^{0.5}
+  \label{eq:map50}
+\end{equation}
+
+\begin{equation}
+  \text{mAP@0.5:0.95} = \frac{1}{C} \sum_{c=1}^{C} \frac{1}{10} 
+  \sum_{t \in \{0.5, 0.55, \ldots, 0.95\}} \text{AP}_c^{t}
+  \label{eq:map5095}
+\end{equation}
+
+\subsection{Precision, Recall, and F1-Score}
+Precision and recall are computed at the 0.5 IoU threshold. The F1-score 
+is the harmonic mean:
+
+\begin{equation}
+  F_1 = \frac{2 \cdot \text{Precision} \cdot \text{Recall}}
+             {\text{Precision} + \text{Recall}}
+  \label{eq:f1}
+\end{equation}
+
+\section{Baseline Configuration}
+
+The baseline is YOLO V11-L (large variant) pretrained on COCO 2017, 
+fine-tuned for 100 epochs with SGD ($\text{lr}=0.01$, momentum$=0.937$, 
+weight decay$=5\times10^{-4}$), input resolution $640 \times 640$.
+
+% ══════════════════════════════════════════════════════════
+\chapter{Proposed Improvements}
+\label{chap:improvements}
+% ══════════════════════════════════════════════════════════
+
+\section{Improvement 1: CBAM Attention Integration}
+
+CBAM is inserted after each C2f block in the neck's feature pyramid. 
+Given a feature map $\mathbf{F} \in \mathbb{R}^{C \times H \times W}$, 
+the refined feature map is:
+
+\begin{equation}
+  \mathbf{F'} = M_s(\mathbf{F} \otimes M_c(\mathbf{F})) \otimes 
+                (\mathbf{F} \otimes M_c(\mathbf{F}))
+  \label{eq:cbam}
+\end{equation}
+
+where $M_c$ and $M_s$ denote channel and spatial attention maps respectively. 
+This directs the network's focus toward salient regions, particularly 
+beneficial for small and partially occluded objects.
+
+\section{Improvement 2: Varifocal Loss}
+
+The standard classification loss is replaced with Varifocal Loss:
+
+\begin{equation}
+  \mathcal{L}_{VFL} = 
+  \begin{cases}
+    -q(q\log(p) + (1-q)\log(1-p)) & q > 0 \\
+    -\alpha p^\gamma \log(1-p)    & q = 0
+  \end{cases}
+  \label{eq:vfl}
+\end{equation}
+
+where $q$ is the IoU quality score of the predicted box, $p$ is the 
+predicted probability, $\alpha = 0.75$, and $\gamma = 2.0$. This formulation 
+up-weights high-quality positives while aggressively suppressing easy negatives.
+
+\section{Improvement 3: Mosaic-Plus Augmentation}
+
+The standard mosaic augmentation is extended with:
+\begin{itemize}
+  \item \textbf{Copy-Paste:} Random instances are segmented and pasted 
+    onto target images, synthetically increasing small-object frequency.
+  \item \textbf{MixUp:} Two images are blended as 
+    $\tilde{x} = \lambda x_i + (1-\lambda) x_j$, $\lambda \sim \text{Beta}(8,8)$.
+  \item \textbf{Random Erasing:} Rectangular patches are randomly masked 
+    to simulate occlusion during training.
+\end{itemize}
+
+\section{Improvement 4: Anchor-Free TOOD Detection Head}
+
+The default coupled detection head is replaced with a Task-Aligned One-stage 
+Object Detection (TOOD) head. Classification and regression are predicted 
+from separate branches using task-aligned feature extraction:
+
+\begin{equation}
+  \hat{b} = f_{\text{reg}}(\mathbf{F}^*), \quad 
+  \hat{p} = \sigma(f_{\text{cls}}(\mathbf{F}^*))
+  \label{eq:tood}
+\end{equation}
+
+where $\mathbf{F}^*$ is a task-aligned feature computed via learned alignment 
+weights, eliminating the sensitivity to anchor hyperparameters.
+
+\section{Improvement 5: Hybrid ViT-CNN Backbone}
+
+The final stage of the CSP backbone is replaced with a lightweight 
+ViT encoder (4 transformer blocks, embedding dim $= 384$). This captures 
+global context while keeping the early convolutional stages for local 
+feature extraction. The architecture is:
+
+\textit{[Diagram Description: The improved backbone consists of three 
+convolutional stages (Conv + C2f blocks) processing the image from 
+$640\times640$ down to $80\times80$ feature maps. At stage 4, feature 
+tokens are flattened and passed through 4 Multi-Head Self-Attention (MHSA) 
+blocks with a 6-head configuration. CBAM modules are inserted at each 
+PANet neck fusion point. The anchor-free TOOD head receives P3, P4, P5 
+feature maps and outputs class + box predictions independently. Varifocal 
+Loss supervises classification; CIoU Loss supervises box regression.]}
+
+% ══════════════════════════════════════════════════════════
+\chapter{Experimental Setup}
+\label{chap:expsetup}
+% ══════════════════════════════════════════════════════════
+
+\section{Hardware and Software}
+All experiments were conducted on 2× NVIDIA A100 80GB GPUs, PyTorch 2.1, 
+CUDA 12.2, Python 3.11. Training used mixed-precision (FP16) throughout.
+
+\section{Training Protocol}
+Models were trained for 150 epochs with a cosine annealing learning rate 
+schedule ($\text{lr}_{\text{init}} = 0.01$, $\text{lr}_{\text{final}} = 0.001$). 
+Ablation studies isolated each improvement individually before combining all five.
+
+% ══════════════════════════════════════════════════════════
+\chapter{Results and Discussion}
+\label{chap:results}
+% ══════════════════════════════════════════════════════════
+
+\section{Main Results on COCO 2017}
+
+Table~\ref{tab:coco-results} compares the baseline against the proposed model 
+and each ablation variant.
+
+\begin{table}[H]
+  \centering
+  \caption{Object detection results on COCO 2017 val set.}
+  \label{tab:coco-results}
+  \begin{tabular}{lcccc}
+    \toprule
+    \textbf{Model} & \textbf{mAP@0.5} & \textbf{mAP@0.5:0.95} 
+                   & \textbf{Precision} & \textbf{Recall} \\
+    \midrule
+    YOLO V11-L (Baseline)         & 56.3 & 40.1 & 72.4 & 63.8 \\
+    + CBAM Attention               & 57.6 & 41.0 & 73.1 & 64.9 \\
+    + Varifocal Loss               & 58.1 & 41.8 & 74.2 & 65.3 \\
+    + Mosaic-Plus Augmentation     & 58.9 & 42.3 & 73.8 & 66.7 \\
+    + Anchor-Free Head (TOOD)      & 59.4 & 42.9 & 74.9 & 67.1 \\
+    + Hybrid ViT Backbone (Ours)   & \textbf{61.0} & \textbf{44.2} 
+                                   & \textbf{75.8} & \textbf{68.4} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The full model achieves a \textbf{4.7\% absolute improvement} in mAP@0.5 
+over the baseline. The hybrid ViT backbone contributes the largest individual 
+gain (1.6\%), confirming the value of global context modelling.
+
+\section{Small Object Detection}
+
+\begin{table}[H]
+  \centering
+  \caption{AP on small objects ($\text{area} < 32^2$ px) — COCO 2017.}
+  \label{tab:small-obj}
+  \begin{tabular}{lcc}
+    \toprule
+    \textbf{Model} & \textbf{AP\textsubscript{small}@0.5} 
+                   & \textbf{AP\textsubscript{small}@0.5:0.95} \\
+    \midrule
+    Baseline      & 28.4 & 14.7 \\
+    Proposed      & \textbf{37.5} & \textbf{20.9} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The 9.1\% absolute gain on small objects (Table~\ref{tab:small-obj}) 
+demonstrates the combined effect of CBAM-guided attention, copy-paste 
+augmentation, and the ViT's ability to reason across scales.
+
+\section{Discussion}
+
+The results confirm that no single improvement dominates; the gains are 
+complementary. Varifocal Loss is particularly impactful on imbalanced classes, 
+reducing false positives by approximately 8\% on the traffic dataset. The 
+anchor-free head reduces sensitivity to scale hyperparameters without 
+increasing inference time. The primary limitation is a 14\% increase in 
+parameter count from the ViT integration, which may constrain edge deployment.
+
+% ══════════════════════════════════════════════════════════
+\chapter{Conclusion and Future Work}
+\label{chap:conclusion}
+% ══════════════════════════════════════════════════════════
+
+\section{Conclusion}
+
+This thesis presented a systematic framework for improving YOLO V11's object 
+detection accuracy through five complementary optimization techniques. The 
+proposed model achieves mAP@0.5 of 61.0\% on COCO 2017, outperforming the 
+baseline by 4.7 percentage points, with a particularly strong gain of 9.1\% 
+on small objects. The results demonstrate that attention mechanisms, improved 
+loss functions, sophisticated augmentation, anchor-free detection, and 
+transformer integration can be combined synergistically without excessive 
+computational overhead.
+
+\section{Future Work}
+
+Several promising directions remain unexplored:
+
+\begin{enumerate}
+  \item \textbf{Knowledge Distillation:} Compressing the proposed model 
+    into a lightweight variant suitable for edge deployment via teacher-student distillation.
+  \item \textbf{Self-Supervised Pretraining:} Leveraging large unlabelled 
+    video corpora to pretrain the ViT backbone, reducing dependence on 
+    labelled data.
+  \item \textbf{Dynamic Anchor Adaptation:} Extending the anchor-free 
+    head with learned, dynamic query anchors as in DN-DETR.
+  \item \textbf{Domain Adaptation:} Evaluating generalization across 
+    unseen domains (e.g., thermal, satellite imagery) with domain-adversarial training.
+  \item \textbf{Real-Time ViT Variants:} Replacing the ViT encoder with 
+    EfficientViT or MobileViT to recover the inference speed trade-off.
+\end{enumerate}
+
+% ── Bibliography ──────────────────────────────────────────
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}

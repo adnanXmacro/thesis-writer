@@ -1,0 +1,95 @@
+% ════════════════════════════════════════════════════════════
+%  thesis-writer — LaTeX Master Template
+%  Fill in the fields marked CONFIGURE below, then compile
+%  on Overleaf (overleaf.com) or locally with pdflatex.
+% ════════════════════════════════════════════════════════════
+
+\documentclass[12pt, a4paper]{report}
+
+% ── Packages ─────────────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{geometry}\geometry{margin=1in}
+\usepackage{setspace}\doublespacing
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{amsmath, amssymb}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true, linkcolor=black, citecolor=blue, urlcolor=blue}
+\usepackage[numbers, sort&compress]{natbib}  % IEEE
+% For APA: \usepackage[authoryear]{natbib}
+\usepackage{listings}
+\usepackage{xcolor}
+
+% ── CONFIGURE ────────────────────────────────────────────
+\newcommand{\thesistitle}{Your Thesis Title Here}
+\newcommand{\authorname}{Your Full Name}
+\newcommand{\degree}{PhD}
+\newcommand{\department}{Department of Computer Science}
+\newcommand{\institution}{Your University}
+\newcommand{\supervisor}{Supervisor Name}
+\newcommand{\thesisyear}{2026}
+% ─────────────────────────────────────────────────────────
+
+\begin{document}
+
+\begin{titlepage}
+  \centering\vspace*{2cm}
+  {\LARGE\bfseries\thesistitle\par}\vspace{1.5cm}
+  {\large\authorname\par}\vspace{0.5cm}
+  {\normalsize\degree\ Thesis\par}\vspace{0.5cm}
+  {\normalsize\department, \institution\par}\vfill
+  {\normalsize Supervised by: \supervisor\par}\vspace{1cm}
+  {\normalsize\thesisyear\par}
+\end{titlepage}
+
+\pagenumbering{roman}
+\begin{abstract}
+Your abstract here.
+\end{abstract}
+
+\tableofcontents
+\listoffigures
+\listoftables
+\clearpage
+\pagenumbering{arabic}
+
+% ── Chapters (add \input{chapters/chap1} for multi-file) ─
+\chapter{Introduction}
+\label{chap:intro}
+
+\section{Background}
+\label{sec:background}
+
+Body text. Cite with \cite{key}. Reference Figure~\ref{fig:example}.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.8\textwidth]{figures/example}
+  \caption{Example figure caption.}
+  \label{fig:example}
+\end{figure}
+
+\begin{table}[H]
+  \centering
+  \caption{Example results table.}
+  \label{tab:results}
+  \begin{tabular}{lccc}
+    \toprule
+    Model & mAP@0.5 & Precision & Recall \\
+    \midrule
+    Baseline & 56.3 & 72.4 & 63.8 \\
+    Proposed & 61.0 & 75.8 & 68.4 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+% ── Bibliography ─────────────────────────────────────────
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}
