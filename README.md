@@ -131,3 +131,7 @@ PRs welcome. Useful contributions:
 ## 📜 License
 
 MIT — use freely, attribution appreciated.
+
+---
+
+## Powered by Nerds
